@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Firefox Browser Proxy</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        #canvas {
+            cursor: pointer;
+            width: 100%;
+            height: calc(100vh - 64px);
+            object-fit: contain;
+            background: #f3f4f6;
+        }
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 6px;
+        }
+        .status-connected { background-color: #10b981; }
+        .status-disconnected { background-color: #ef4444; }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <div class="flex flex-col h-screen">
+        <div class="bg-white shadow-md p-3 flex items-center gap-2">
+            <div class="flex items-center gap-2">
+                <button id="backBtn" class="px-3 py-2 bg-gray-200 hover:bg-gray-300 rounded disabled:opacity-50" title="Back">
+                    ←
+                </button>
+                <button id="forwardBtn" class="px-3 py-2 bg-gray-200 hover:bg-gray-300 rounded disabled:opacity-50" title="Forward">
+                    →
+                </button>
+                <button id="refreshBtn" class="px-3 py-2 bg-gray-200 hover:bg-gray-300 rounded" title="Refresh">
+                    ↻
+                </button>
+            </div>
+            
+            <div class="flex-1 flex items-center gap-2">
+                <input 
+                    type="text" 
+                    id="urlInput" 
+                    placeholder="Enter URL (e.g., google.com)" 
+                    class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <button id="goBtn" class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">
+                    Go
+                </button>
+            </div>
+
+            <div class="flex items-center gap-2 text-sm">
+                <span class="status-indicator" id="statusIndicator"></span>
+                <span id="statusText" class="text-gray-600">Connecting...</span>
+            </div>
+        </div>
+
+        <div class="flex-1 overflow-hidden bg-gray-100">
+            <img id="canvas" alt="Browser view" />
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const urlInput = document.getElementById('urlInput');
+        const goBtn = document.getElementById('goBtn');
+        const backBtn = document.getElementById('backBtn');
+        const forwardBtn = document.getElementById('forwardBtn');
+        const refreshBtn = document.getElementById('refreshBtn');
+        const statusIndicator = document.getElementById('statusIndicator');
+        const statusText = document.getElementById('statusText');
+
+        let ws = null;
+        let isConnected = false;
+
+        function connect() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/ws`;
+            
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                console.log('WebSocket connected');
+                updateStatus(true);
+            };
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                
+                switch (data.type) {
+                    case 'ready':
+                        console.log('Browser ready');
+                        break;
+                    
+                    case 'screenshot':
+                        canvas.src = 'data:image/png;base64,' + data.data;
+                        break;
+                    
+                    case 'error':
+                        console.error('Server error:', data.message);
+                        alert('Error: ' + data.message);
+                        break;
+                }
+            };
+
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                updateStatus(false);
+            };
+
+            ws.onclose = () => {
+                console.log('WebSocket disconnected');
+                updateStatus(false);
+                setTimeout(connect, 3000);
+            };
+        }
+
+        function updateStatus(connected) {
+            isConnected = connected;
+            statusIndicator.className = 'status-indicator ' + (connected ? 'status-connected' : 'status-disconnected');
+            statusText.textContent = connected ? 'Connected' : 'Disconnected';
+        }
+
+        function send(data) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify(data));
+            }
+        }
+
+        goBtn.addEventListener('click', () => {
+            const url = urlInput.value.trim();
+            if (url) {
+                send({ type: 'navigate', url });
+            }
+        });
+
+        urlInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                goBtn.click();
+            }
+        });
+
+        backBtn.addEventListener('click', () => send({ type: 'back' }));
+        forwardBtn.addEventListener('click', () => send({ type: 'forward' }));
+        refreshBtn.addEventListener('click', () => send({ type: 'refresh' }));
+
+        canvas.addEventListener('click', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const x = (e.clientX - rect.left) / rect.width;
+            const y = (e.clientY - rect.top) / rect.height;
+            send({ type: 'click', x, y });
+        });
+
+        canvas.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            send({ type: 'scroll', delta: e.deltaY > 0 ? 1 : -1 });
+        }, { passive: false });
+
+        document.addEventListener('keydown', (e) => {
+            if (document.activeElement === urlInput) {
+                return;
+            }
+            
+            if (e.key.length === 1) {
+                send({ type: 'input', text: e.key });
+                e.preventDefault();
+            } else if (['Enter', 'Backspace', 'Tab', 'Escape', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+                send({ type: 'key', key: e.key });
+                e.preventDefault();
+            }
+        });
+
+        canvas.addEventListener('focus', () => {
+            console.log('Canvas focused - keyboard input enabled');
+        });
+
+        canvas.setAttribute('tabindex', '0');
+
+        connect();
+    </script>
+</body>
+</html>
