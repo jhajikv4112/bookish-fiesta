@@ -1,0 +1,14 @@
+{
+  "name": "firefox-browser-proxy",
+  "version": "1.0.0",
+  "description": "Visual browser proxy with Firefox and ad-blocking",
+  "main": "server.js",
+  "scripts": {
+    "start": "python3 server.py"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "ws": "^8.14.2",
+    "playwright": "^1.40.0"
+  }
+}
