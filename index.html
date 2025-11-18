@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+<body>
+<script>
+fetch("https://demo-api.tutturu.workers.dev/")
+  .then(r => r.json())
+  .then(data => {
+    if (data.url) {
+      window.location.href = data.url;
+    } else {
+      alert("No redirect URL found.");
+    }
+  })
+  .catch(err => alert("Error: " + err));
+</script>
+</body>
+</html>
